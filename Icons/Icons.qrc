@@ -1,0 +1,9 @@
+<RCC>
+  <qresource prefix="Main">
+    <file>icon.ico</file>
+  </qresource>
+  <qresource prefix="Buttons">
+    <file>boton-x.png</file>
+    <file>flechita.png</file>
+  </qresource>
+</RCC>
