@@ -122,7 +122,6 @@ class MainWindow(qtw.QMainWindow):
             self.watcher.addPath(base_xml)
             self.watcher.directoryChanged.connect(self.actualizar_treeview)
             logger.info(f"Supervisando la carpeta: {base_xml}")
-
         else:
             logger.error(f"La carpeta '{base_xml}' no existe. No se pudo inicializar el supervisor.")
 
