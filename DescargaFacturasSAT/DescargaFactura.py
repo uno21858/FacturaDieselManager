@@ -166,11 +166,11 @@ def descarga(driver, carpeta_destino, mes, year):
     time.sleep(1)
     # Se va hasta abajo de la página para cargar todas las facturas
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    time.sleep(.5)
     botones_descarga = driver.find_elements(By.ID, "BtnDescarga") or driver.find_elements(By.XPATH, "//*[@id='BtnDescarga']")
     for index, boton in enumerate(botones_descarga, start=1):
         time.sleep(1)
         try:
-            # Descarga el archivo
             time.sleep(1)
             boton.click()
             logger.info(f"Descargando XML {index} de {len(botones_descarga)}")

@@ -7,7 +7,7 @@ import logging
 
 from PySide6 import QtWidgets as qtw
 from PySide6.QtWidgets import QFileSystemModel, QMessageBox
-from PySide6.QtCore import QModelIndex
+from PySide6.QtCore import QFileSystemWatcher, QModelIndex
 
 from utils import base_archivos
 from Principal.UI.principal_window import Ui_MainWindow
@@ -50,6 +50,7 @@ class MainWindow(qtw.QMainWindow):
         self.ui.treeView.setColumnHidden(3, True)
         self.ui.treeView.setHeaderHidden(True)
         self.ui.treeView.clicked.connect(self.on_treeview_click)
+        self.inicializar_supervisor()
 
 
     def setup_logger(self):
@@ -96,9 +97,8 @@ class MainWindow(qtw.QMainWindow):
         file_path = self.file_system_model.filePath(index)
 
         if os.path.isfile(file_path) and file_path.endswith('.xml'):
-            logger.info(f"Procesando archivo seleccionado: {file_path}")
+            logger.info(f"Procesando archivo seleccionado:")
 
-            # Lógica para procesar el archivo seleccionado
             fecha, folio = sacar_datos(file_path)
             diesel_liters, diesel_price, gasoline_price = extract_fuel_data(file_path)
 
@@ -114,8 +114,28 @@ class MainWindow(qtw.QMainWindow):
             logger.info(f"Precio de gasolina: ${gasoline_price:.2f}")
         else:
             QMessageBox.warning(self, "Archivo no válido", "Por favor selecciona un archivo XML válido.")
+    # Actualizar constantemente el tree
+    def inicializar_supervisor(self):
+        self.watcher = QFileSystemWatcher()
+        base_xml = base_archivos + "/xml_descargado"
+        if os.path.exists(base_xml):
+            self.watcher.addPath(base_xml)
+            self.watcher.directoryChanged.connect(self.actualizar_treeview)
+            logger.info(f"Supervisando la carpeta: {base_xml}")
 
-# Funciones auxiliares
+        else:
+            logger.error(f"La carpeta '{base_xml}' no existe. No se pudo inicializar el supervisor.")
+
+    def actualizar_treeview(self):
+        base_xml = base_archivos + "/xml_descargado"
+        if os.path.exists(base_xml):
+            self.file_system_model.setRootPath(base_xml)
+            self.ui.treeView.setRootIndex(self.file_system_model.index(base_xml))
+            logger.info("Árbol de facturas actualizado.")
+        else:
+            logger.warning("La carpeta de facturas no existe.")
+
+# Funciones externas para suma de diesel y gasolina
 def traducir_mes(fecha):
     meses = {
         "January": "enero", "February": "febrero", "March": "marzo", "April": "abril",
