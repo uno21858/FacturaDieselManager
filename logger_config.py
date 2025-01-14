@@ -2,11 +2,10 @@ import logging
 import os
 
 
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))  # Directorio raíz del proyecto
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Define la carpeta de logs y el archivo de logs
-LOG_DIR = os.path.join(ROOT_DIR, "logs")  # Carpeta de logs
-LOG_FILE = os.path.join(LOG_DIR, "app_logs.txt")  # Archivo de logs dentro de la carpeta
+LOG_DIR = os.path.join(ROOT_DIR, "logs")
+LOG_FILE = os.path.join(LOG_DIR, "app_logs.txt")
 
 # Crear la carpeta de logs si no existe
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -14,10 +13,9 @@ os.makedirs(LOG_DIR, exist_ok=True)
 # Configuración básica del logger
 logging.basicConfig(
     filename=LOG_FILE,
-    filemode="a",  # Agregar logs al archivo en lugar de sobrescribirlo
+    filemode="a", # Append
     format="%(asctime)s - %(levelname)s - %(message)s %(funcName)s:%(lineno)d",
-    level=logging.DEBUG,  # Cambiar a DEBUG para más detalles
+    level=logging.DEBUG,
 )
 
-# Crear un logger reutilizable
 logger = logging.getLogger("AppLogger")
