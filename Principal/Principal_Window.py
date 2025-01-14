@@ -49,6 +49,8 @@ class MainWindow(qtw.QMainWindow):
         self.ui.treeView.setColumnHidden(2, True)
         self.ui.treeView.setColumnHidden(3, True)
         self.ui.treeView.setHeaderHidden(True)
+        self.ui.treeView.clicked.connect(self.on_treeview_click)
+
 
     def setup_logger(self):
         handler = QTextEditHandler(self.ui.DispLogs)
@@ -96,14 +98,16 @@ class MainWindow(qtw.QMainWindow):
         if os.path.isfile(file_path) and file_path.endswith('.xml'):
             logger.info(f"Procesando archivo seleccionado: {file_path}")
 
+            # Lógica para procesar el archivo seleccionado
             fecha, folio = sacar_datos(file_path)
             diesel_liters, diesel_price, gasoline_price = extract_fuel_data(file_path)
 
+            # Actualizar etiquetas
             self.ui.lb_fechaEmision.setText(fecha)
-            self.ui.lb_LitersDiesel.setText(f"Litros de diésel: {diesel_liters:.2f}")
-            self.ui.lb_PriceDiesel.setText(f"${diesel_price:.2f}")
-            self.ui.lb_folio.setText(f"D{folio}")
-            self.ui.lb_PriceGas.setText(f"${gasoline_price:.2f}")
+            self.ui.lb_LitersDiesel.setText(f"{diesel_liters:,.2f}")
+            self.ui.lb_PriceDiesel.setText(f"${diesel_price:,.2f}")
+            self.ui.lb_FolioFactura.setText(f"D{folio}")
+            self.ui.lb_PriceGas.setText(f"${gasoline_price:,.2f}")
 
             logger.info(f"Fecha: {fecha}, Folio: {folio}")
             logger.info(f"Litros de diésel: {diesel_liters}, Precio de diésel: ${diesel_price:.2f}")

@@ -11,8 +11,7 @@ class UiForm(qtw.QDialog, Ui_Form):  # Cambia de QWidget a QDialog
         super().__init__()
         self.setupUi(self)
         self.callback = callback
-
-        self.pb_Cancel.clicked.connect(self.reject)  # Cierra la ventana sin guardar
+        self.pb_Cancel.clicked.connect(self.reject)
         self.pb_Ok.clicked.connect(self.guardar_credenciales)
 
     def guardar_credenciales(self):

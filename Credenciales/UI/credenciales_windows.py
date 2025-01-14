@@ -37,7 +37,7 @@ class Ui_Form(object):
         self.pb_Ok = QPushButton(Form)
         self.pb_Ok.setObjectName(u"pb_Ok")
         icon1 = QIcon()
-        icon1.addFile(u":/Buttons/flechita.png", QSize(), QIcon.Mode.Normal, QIcon.State.Off)
+        icon1.addFile(u":/Buttons/check.png", QSize(), QIcon.Mode.Normal, QIcon.State.Off)
         self.pb_Ok.setIcon(icon1)
 
         self.gridLayout.addWidget(self.pb_Ok, 2, 0, 1, 1)

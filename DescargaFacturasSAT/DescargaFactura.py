@@ -295,7 +295,6 @@ def MainDescarga(MainWindow):
     try:
         carpeta_destino = crear_estructura_carpetas(base_archivos, year, mes, BuscarRFC)
         driver = configurar_navegador(carpeta_destino)
-
         intentos = 0
         max_intentos = 4
         driver.get(SAT_URL)
