@@ -51,7 +51,7 @@ def cargar_credenciales():
 
 def configurar_navegador(ruta_descarga):
     options = Options()
-    #options.add_argument("--headless")
+    options.add_argument("--headless")
     options.add_argument("--window-size=1920x1080")
     options.set_preference("browser.download.folderList", 2)
     options.set_preference("browser.download.dir", ruta_descarga)
