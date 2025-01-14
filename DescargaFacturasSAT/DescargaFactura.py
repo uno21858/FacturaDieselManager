@@ -1,76 +1,37 @@
+# Librerias standar
+import glob
+import hashlib
+import os
 import sys
+import time
+import xml.etree.ElementTree as ET
 from contextlib import nullcontext
+from io import BytesIO
+from PIL import Image
+# Librerías externas
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.firefox.options import Options
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
-import xml.etree.ElementTree as ET
-import hashlib
-import glob
+from selenium.webdriver.support.ui import WebDriverWait
+from PySide6 import QtWidgets as qtw
+# Archivos locales
 from logger_config import logger
-from PIL import Image
-from io import BytesIO
-import time
-import os
+from Credenciales.credencial import MainCreateCredentials
+from DescargaFacturasSAT.BaseDir import BASE_DIR
+from Credenciales.credencial import UiForm as CredencialesForm
+from utils import base_archivos
 
-
-def preguntar_mes():
-    meses_a_descargar = {
-        "enero": "1", "febrero": "2", "marzo": "3", "abril": "4",
-        "mayo": "5", "junio": "6","julio": "7", "agosto": "8",
-        "septiembre": "9", "octubre": "10", "noviembre": "11", "diciembre": "12"}
-
-    mes = input("Ingresa el mes que deseas descargar (enero, febrero, etc...): ").lower()
-    if mes in meses_a_descargar:
-        return meses_a_descargar[mes]
-    else:
-        print("Mes inválido.")
-        return preguntar_mes()
-
-def preguntar_anio():
-    anio = input("Ingresa los dos últimos dígitos del año que deseas descargar (ej. 21): ")
-    if len(anio) == 2 and anio.isnumeric():
-        anio_completo = int("20" + anio)
-        anio_actual = int(time.strftime("%Y"))
-        if anio_completo <= anio_actual:
-            return anio
-        else:
-            print("Año inválido. No intente viajar al futuro.")
-    else:
-        print("Año inválido.")
-    return preguntar_anio()
 
 # Configuración
 SAT_URL = "https://portalcfdi.facturaelectronica.sat.gob.mx/"
 DEMO_URL = "https://www.boxfactura.com/sat-captcha-ai-model/"
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RFC_FILE = os.path.join(BASE_DIR, "RFC.txt")
 PASSWORD_FILE = os.path.join(BASE_DIR, "passwd.txt")
 CAPTCHA_FILE = os.path.join(BASE_DIR, "captcha_sat.png")
 BuscarRFC = "GCO740121MC5"
-
-def crear_archivos_credenciales(rfc=None, password=None):
-    """Crea los archivos de credenciales si no existen."""
-    if not os.path.exists(RFC_FILE):
-        if not rfc:
-            raise ValueError("El RFC no se proporcionó y no existe un archivo.")
-        with open(RFC_FILE, 'w') as rfc_file:
-            rfc_file.write(rfc)
-        logger.info(f"Archivo RFC creado correctamente: {RFC_FILE}")
-    else:
-        logger.info("El archivo RFC ya existe.")
-
-    if not os.path.exists(PASSWORD_FILE):
-        if not password:
-            raise ValueError("La contraseña no se proporcionó y no existe un archivo.")
-        with open(PASSWORD_FILE, 'w') as password_file:
-            password_file.write(password)
-        logger.info(f"Archivo de contraseña creado correctamente: {PASSWORD_FILE}")
-    else:
-        logger.info("El archivo de contraseña ya existe.")
 
 
 def cargar_credenciales():
@@ -81,8 +42,8 @@ def cargar_credenciales():
             password_content = password_file.read().strip()
         return rfc_content, password_content
     except FileNotFoundError:
+        MainCreateCredentials()
         logger.error("Uno o ambos archivos de credenciales no se encontraron.")
-        crear_archivos_credenciales()
         raise
     except Exception as e:
         logger.error(f"Error al cargar credenciales: {e}")
@@ -90,18 +51,17 @@ def cargar_credenciales():
 
 def configurar_navegador(ruta_descarga):
     options = Options()
-    options.add_argument("--headless")
+    #options.add_argument("--headless")
     options.add_argument("--window-size=1920x1080")
     options.set_preference("browser.download.folderList", 2)
     options.set_preference("browser.download.dir", ruta_descarga)
     options.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/xml")  # Evitar confirmación de descarga
     options.set_preference("pdfjs.disabled", True)  # Evitar visor de PDF integrado
 
-    service = Service(executable_path=os.path.join(os.getcwd(),"geckodriver.exe"))
+    service = Service(executable_path=os.path.join(BASE_DIR,"geckodriver.exe"))
     driver = webdriver.Firefox(service=service, options=options)
     return driver
 
-# Descargar captcha del SAT
 def descargar_captcha(driver):
     captcha_element = WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.ID, "divCaptcha"))
@@ -110,10 +70,9 @@ def descargar_captcha(driver):
     time.sleep(2)
     captcha_image = Image.open(BytesIO(captcha_screenshot))
     captcha_image.save(CAPTCHA_FILE)
-    print(f"Captcha guardado en {CAPTCHA_FILE}")
+    logger.info(f"Captcha guardado en {CAPTCHA_FILE}")
     return CAPTCHA_FILE
 
-# Resolver captcha en pagina
 def resolver_captcha_en_demo(driver, captcha_image):
     driver.execute_script("window.open('');")
     driver.switch_to.window(driver.window_handles[1])
@@ -134,9 +93,9 @@ def resolver_captcha_en_demo(driver, captcha_image):
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'span.demo-output-result[data-js-result]')) or
                 EC.presence_of_element_located((By.CLASS_NAME, "demo-output-result")))
         except Exception as e:
-            print(f"Error al resolver captcha: {e}")
+            logger.error(f"Error al resolver captcha: {e}")
         return captcha_result
-    print(f"Captcha resuelto: {captcha_result}")
+    logger.info(f"Captcha resuelto: {captcha_result}")
     driver.close()
     driver.switch_to.window(driver.window_handles[0])
     return captcha_result
@@ -156,7 +115,7 @@ def iniciar_sesion_en_sat(driver, rfc, password, captcha_text):
     WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.ID, "submit"))
     ).click()
-    print("Intentando iniciar sesión en el SAT...")
+    logger.info("Intentando iniciar sesión en el SAT")
 
 # Verificar errores de inicio de sesion
 def verificar_error(driver):
@@ -164,13 +123,10 @@ def verificar_error(driver):
         error_message = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "msgError"))
         ).text
-        print(f"Error detectado: {error_message}")
-        intentos_maximos = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "")))
+        logger.error(f"Error detectado: {error_message}")
         return True
     except:
         return False
-
 
 def crear_estructura_carpetas(base_dir, anio, mes, RFC):
     # Meses en texto
@@ -184,14 +140,14 @@ def crear_estructura_carpetas(base_dir, anio, mes, RFC):
     ruta_anio = os.path.join(ruta_RFC, anio)
     ruta_mes = os.path.join(ruta_anio, mes_texto)
     os.makedirs(ruta_mes, exist_ok=True)
-    print(f"Carpeta creada o ya existente: {ruta_mes}")
+    logger.info(f"Carpeta creada o ya existente: {ruta_mes}")
     return ruta_mes
 
 # Descargar XML Recibidos
 def descarga(driver, carpeta_destino, mes, year):
     time.sleep(2)
     # Navegar a la sección de Recibidos
-    boton_recibidos = WebDriverWait(driver, 10).until(
+    boton_recibidos = WebDriverWait(driver, 50).until(
         EC.presence_of_element_located((By.XPATH, "/html/body/form/main/div[1]/div[2]/div[1]/div/div[1]/div/nav/ul/div[2]/li/a")))
     boton_recibidos.click()
     # Seleccionar rango de fechas
@@ -202,7 +158,7 @@ def descarga(driver, carpeta_destino, mes, year):
     # Seleccionar año
     select_anio = (Select(driver.find_element(By.XPATH, "//*[@id='DdlAnio']")) or
                    driver.find_elements(By.NAME, "ctl00$MainContent$CldFecha$DdlAnio"))
-    select_anio.select_by_value("20" + year)
+    select_anio.select_by_value(str(year))
     # Ingresar RFC
     driver.find_element(By.XPATH, "//*[@id='ctl00_MainContent_TxtRfcReceptor']").send_keys(BuscarRFC)
     Select(driver.find_element(By.ID, "ctl00_MainContent_DdlEstadoComprobante")).select_by_value("1")
@@ -212,11 +168,12 @@ def descarga(driver, carpeta_destino, mes, year):
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     botones_descarga = driver.find_elements(By.ID, "BtnDescarga") or driver.find_elements(By.XPATH, "//*[@id='BtnDescarga']")
     for index, boton in enumerate(botones_descarga, start=1):
+        time.sleep(1)
         try:
             # Descarga el archivo
-            time.sleep(1)  # Espera breve para evitar sobrecargar la página
+            time.sleep(1)
             boton.click()
-            print(f"Descargando XML {index} de {len(botones_descarga)}")
+            logger.info(f"Descargando XML {index} de {len(botones_descarga)}")
             esperar_descarga_completa(carpeta_destino)
             if index % 15 == 0:
                 time.sleep(1)  # Espera antes de cambiar de página
@@ -224,16 +181,15 @@ def descarga(driver, carpeta_destino, mes, year):
                     driver.find_element(By.XPATH, "/html/body/form/main/div[1]/div[2]"
                                                   "/div[1]/div[2]/div[1]/div[3]/ul/li[36]/a").click()
 
-                    print("Página cambiada a .")
+                    logger.info("Página cambiada a .")
                     time.sleep(3)
                 except Exception as e:
-                    print(f"Error al cambiar de página: {e}")
+                    logger.error(f"Error al cambiar de página: {e}")
         except Exception as e:
-            print(f"Error al descargar XML {index}: {e}")
+            logger.error(f"Error al descargar XML {index}: {e}")
         finally:
             continue
 
-    print("Descarga finalizada.")
     time.sleep(.5)
     borrar_basura(carpeta_destino)
     driver.quit()
@@ -266,8 +222,8 @@ def borrar_basura(ruta_mes):
             hash_dict[archivo_hash] = ruta_archivo
     for duplicado in duplicados:
         os.remove(duplicado)
-        print(f"Archivo duplicado eliminado: {duplicado}")
-    print(f"Total duplicados eliminados: {len(duplicados)}")
+        #print(f"Archivo duplicado eliminado: {duplicado}")
+    logger.info(f"Total duplicados eliminados: {len(duplicados)}")
 
     # Eliminar facturas con importe en 0 o sin el campo Importe
     for archivo in archivos_xml:
@@ -284,19 +240,17 @@ def borrar_basura(ruta_mes):
                     eliminar = False
             if eliminar:
                 os.remove(ruta_archivo)
-                print(f"Factura eliminada (sin importes válidos): {ruta_archivo}")
+                logger.info(f"Factura eliminada (sin importes válidos): {ruta_archivo}")
                 facturas_eliminadas += 1
 
         except Exception as e:
-            print(f"Error al procesar {ruta_archivo}: {e}")
+            logger.error(f"Error al procesar {ruta_archivo}: {e}")
 
-    print(f"Total facturas eliminadas: {facturas_eliminadas}")
+    logger.info(f"Total facturas eliminadas: {facturas_eliminadas}")
     time.sleep(1)
     cambiar_nombre(ruta_mes)
-    time.sleep(1)
-    sys.exit()
 
-def cambiar_nombre(ruta_mes): # Cambia el nombre segun el Folio
+def cambiar_nombre(ruta_mes):
     for archivo in os.listdir(ruta_mes):
         ruta_archivo = os.path.join(ruta_mes, archivo)
         try:
@@ -311,49 +265,70 @@ def cambiar_nombre(ruta_mes): # Cambia el nombre segun el Folio
                 folio = "Folio no encontrado"
 
             os.rename(ruta_archivo, os.path.join(ruta_mes, f"D{folio}.xml"))
-            print(f"Archivo renombrado: D{folio}.xml")
+            logger.info(f"Archivo renombrado: D{folio}.xml")
         except Exception as e:
-            print(f"Error al procesar {ruta_archivo}: {e}")
+            logger.error(f"Error al procesar {ruta_archivo}: {e}")
         finally:
             continue
 
-
-if __name__ == "__main__":
-
-    base_dir = os.getcwd()
-    crear_archivos_credenciales()
+def MainDescarga(MainWindow):
+    mes = str(MainWindow.mes_numerico_seleccionado)
+    year = str(MainWindow.anio_seleccionado)
     try:
         rfc, password = cargar_credenciales()
+    except FileNotFoundError:
+        logger.error("Uno o ambos archivos de credenciales no se encontraron.")
+        qtw.QMessageBox.warning(
+            MainWindow,
+            "Credenciales faltantes",
+            "No se encontraron las credenciales. Por favor, introdúzcalas para continuar."
+        )
+
+        # Abre la ventana de creación de credenciales y espera que el usuario las cree
+        ventana_credenciales = CredencialesForm(callback=lambda: None)
+        ventana_credenciales.exec()
+        return
     except Exception as e:
-        print(f"Error al cargar las credenciales: {e}")
-        sys.exit(1)
-    year = preguntar_anio()
-    mes = preguntar_mes()
-    carpeta_destino = crear_estructura_carpetas(base_dir, "20" + year, mes, BuscarRFC)
-    driver = configurar_navegador(carpeta_destino)
-    intentos = 0
-    max_intentos = 3
+        logger.error(f"Error al cargar las credenciales: {e}")
+        qtw.QMessageBox.critical(MainWindow, "Error", "Ocurrió un error al cargar las credenciales.")
+        return
     try:
+        carpeta_destino = crear_estructura_carpetas(base_archivos, year, mes, BuscarRFC)
+        driver = configurar_navegador(carpeta_destino)
+
+        intentos = 0
+        max_intentos = 4
         driver.get(SAT_URL)
+
         while intentos < max_intentos:
+
             try:
                 time.sleep(1)
                 captcha_path = descargar_captcha(driver)
                 captcha_text = resolver_captcha_en_demo(driver, captcha_path)
                 iniciar_sesion_en_sat(driver, rfc, password, captcha_text)
+
                 if verificar_error(driver):
                     intentos += 1
-                    print(f"Reintentando... ({intentos}/{max_intentos})")
-                    driver.get(SAT_URL)  # Recargar página
+                    logger.info(f"Reintentando... ({intentos}/{max_intentos})")
+                    driver.get(SAT_URL)
                 else:
                     descarga(driver, carpeta_destino, mes, year)
                     break
             except Exception as e:
-                print(f"Error durante el intento: {e}")
+                logger.error(f"Error durante el intento: {e}")
                 intentos += 1
+
         if intentos == max_intentos:
-            print("Se alcanzó el límite máximo de intentos.")
+            logger.error("Se alcanzó el límite máximo de intentos.")
+            qtw.QMessageBox.critical(MainWindow, "Error", "No fue posible completar la descarga después de varios intentos."
+                                                          "\nPor favor, inténtelo de nuevo más tarde. Ya que el SAT es una Basura.")
+    except Exception as e:
+        logger.error(f"Error inesperado en el flujo de descarga: {e}")
+        qtw.QMessageBox.critical(MainWindow, "Error", "Ocurrió un error inesperado durante la descarga."
+                                                      f"\nError: {e}")
     finally:
-        driver.quit()
-        print("Navegador cerrado.")
-        sys.exit()
+        if 'driver' in locals():
+            driver.quit()
+        logger.info("Descarga finalizada.")
+

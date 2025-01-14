@@ -24,12 +24,13 @@ class Ui_Form(object):
     def setupUi(self, Form):
         if not Form.objectName():
             Form.setObjectName(u"Form")
-        Form.resize(350, 240)
+        Form.resize(300, 220)
+        Form.setMaximumSize(QSize(400, 300))
         font = QFont()
         font.setPointSize(16)
         Form.setFont(font)
         icon = QIcon()
-        icon.addFile(u":/Main/icon.ico", QSize(), QIcon.Mode.Normal, QIcon.State.Off)
+        icon.addFile(u":/Main/credential.png", QSize(), QIcon.Mode.Normal, QIcon.State.Off)
         Form.setWindowIcon(icon)
         self.gridLayout = QGridLayout(Form)
         self.gridLayout.setObjectName(u"gridLayout")

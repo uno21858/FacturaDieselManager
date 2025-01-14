@@ -1,6 +1,7 @@
 <RCC>
   <qresource prefix="Main">
     <file>icon.ico</file>
+    <file>credential.png</file>
   </qresource>
   <qresource prefix="Buttons">
     <file>boton-x.png</file>

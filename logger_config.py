@@ -15,7 +15,7 @@ os.makedirs(LOG_DIR, exist_ok=True)
 logging.basicConfig(
     filename=LOG_FILE,
     filemode="a",  # Agregar logs al archivo en lugar de sobrescribirlo
-    format="%(asctime)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(levelname)s - %(message)s %(funcName)s:%(lineno)d",
     level=logging.DEBUG,  # Cambiar a DEBUG para más detalles
 )
 
