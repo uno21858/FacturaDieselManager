@@ -2,7 +2,7 @@
 import glob
 import hashlib
 import os
-import sys
+from pathlib import Path
 import time
 import xml.etree.ElementTree as ET
 from contextlib import nullcontext
@@ -128,22 +128,43 @@ def verificar_error(driver):
     except:
         return False
 
-def crear_estructura_carpetas(base_dir, anio, mes, RFC):
-    # Meses en texto
+def crear_estructura_carpetas(base_archivos: str, anio: str, mes: str, RFC: str) -> str:
+    """
+    Crea una estructura de carpetas en base a los parámetros proporcionados.
+
+    Args:
+        base_archivos (str): Ruta base donde se crearán las carpetas.
+        anio (str): Año en formato de texto (e.g., "2025").
+        mes (str): Mes en formato numérico (e.g., "1" para enero).
+        RFC (str): RFC del cliente o empresa.
+
+    Returns:
+        str: Ruta completa de la carpeta creada para el mes específico.
+    """
+    # Diccionario de nombres de meses
     nombres_meses = {
         "1": "enero", "2": "febrero", "3": "marzo", "4": "abril",
         "5": "mayo", "6": "junio", "7": "julio", "8": "agosto",
         "9": "septiembre", "10": "octubre", "11": "noviembre", "12": "diciembre"
     }
-    mes_texto = nombres_meses.get(mes, mes)
-    ruta_RFC = os.path.join(base_dir, "xml_descargado", RFC)
-    ruta_anio = os.path.join(ruta_RFC, anio)
-    ruta_mes = os.path.join(ruta_anio, mes_texto)
-    os.makedirs(ruta_mes, exist_ok=True)
-    logger.info(f"Carpeta creada o ya existente: {ruta_mes}")
-    return ruta_mes
 
-# Descargar XML Recibidos
+    # Obtener el nombre del mes en texto
+    mes_texto = nombres_meses.get(mes, mes)
+    logger.info(f"Mes en texto: {mes_texto}")
+
+    # Crear las rutas usando pathlib
+    ruta_base = Path(base_archivos)
+    ruta_RFC = ruta_base / "xml_descargado" / RFC
+    ruta_anio = ruta_RFC / anio
+    ruta_mes = ruta_anio / mes_texto
+
+    # Crear las carpetas si no existen
+    ruta_mes.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Carpeta creada o ya existente: {ruta_mes}")
+
+    return str(ruta_mes)
+
+# Descargar XML RecibidosA
 def descarga(driver, carpeta_destino, mes, year):
     time.sleep(2)
     # Navegar a la sección de Recibidos

@@ -38,7 +38,7 @@ class MainWindow(qtw.QMainWindow):
 
         self.ui.treeView.setAlternatingRowColors(True)
         self.file_system_model = QFileSystemModel()
-        base_xml = base_archivos + "/xml_descargado"
+        base_xml = base_archivos + r"\xml_descargado"
         self.file_system_model.setRootPath(base_xml)
         self.ui.treeView.setHeaderHidden(True)
         self.file_system_model.index(base_xml)
@@ -108,16 +108,12 @@ class MainWindow(qtw.QMainWindow):
             self.ui.lb_PriceDiesel.setText(f"${diesel_price:,.2f}")
             self.ui.lb_FolioFactura.setText(f"D{folio}")
             self.ui.lb_PriceGas.setText(f"${gasoline_price:,.2f}")
-
-            logger.info(f"Fecha: {fecha}, Folio: {folio}")
-            logger.info(f"Litros de diésel: {diesel_liters}, Precio de diésel: ${diesel_price:.2f}")
-            logger.info(f"Precio de gasolina: ${gasoline_price:.2f}")
         else:
             QMessageBox.warning(self, "Archivo no válido", "Por favor selecciona un archivo XML válido.")
     # Actualizar constantemente el tree
     def inicializar_supervisor(self):
         self.watcher = QFileSystemWatcher()
-        base_xml = base_archivos + "/xml_descargado"
+        base_xml = base_archivos + r"\xml_descargado"
         if os.path.exists(base_xml):
             self.watcher.addPath(base_xml)
             self.watcher.directoryChanged.connect(self.actualizar_treeview)
@@ -126,7 +122,7 @@ class MainWindow(qtw.QMainWindow):
             logger.error(f"La carpeta '{base_xml}' no existe. No se pudo inicializar el supervisor.")
 
     def actualizar_treeview(self):
-        base_xml = base_archivos + "/xml_descargado"
+        base_xml = base_archivos + r"\xml_descargado"
         if os.path.exists(base_xml):
             self.file_system_model.setRootPath(base_xml)
             self.ui.treeView.setRootIndex(self.file_system_model.index(base_xml))

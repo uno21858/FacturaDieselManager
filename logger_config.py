@@ -1,21 +1,15 @@
-import logging
 import os
+import logging
 
-
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-LOG_DIR = os.path.join(ROOT_DIR, "logs")
-LOG_FILE = os.path.join(LOG_DIR, "app_logs.txt")
-
-# Crear la carpeta de logs si no existe
+# Ruta para los logs en la carpeta del usuario
+LOG_DIR = os.path.join(os.path.expanduser("~"), "FacturaDML", "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
-# Configuración básica del logger
+# Configurar logger
+LOG_FILE = os.path.join(LOG_DIR, "application.log")
 logging.basicConfig(
     filename=LOG_FILE,
-    filemode="a", # Append
-    format="%(asctime)s - %(levelname)s - %(message)s %(funcName)s:%(lineno)d",
     level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s - (%(filename)s:%(lineno)d)",
 )
-
-logger = logging.getLogger("AppLogger")
+logger = logging.getLogger(__name__)
