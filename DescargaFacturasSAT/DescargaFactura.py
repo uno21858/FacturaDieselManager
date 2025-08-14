@@ -10,6 +10,7 @@ from io import BytesIO
 from PIL import Image
 # Librerías externas
 from selenium import webdriver
+from selenium.webdriver import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
@@ -51,17 +52,24 @@ def cargar_credenciales():
 
 def configurar_navegador(ruta_descarga):
     options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--window-size=1920x1080")
+    #options.add_argument("--headless")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-web-security")
+    options.add_argument("--disable-features=VizDisplayCompositor")
     options.set_preference("browser.download.folderList", 2)
     options.set_preference("browser.download.dir", ruta_descarga)
-    options.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/xml")  # Evitar confirmación de descarga
-    options.set_preference("pdfjs.disabled", True)  # Evitar visor de PDF integrado
+    options.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/xml")
+    options.set_preference("pdfjs.disabled", True)
 
     service = Service(executable_path=os.path.join(BASE_DIR,"geckodriver.exe"))
     driver = webdriver.Firefox(service=service, options=options)
-    return driver
 
+    # Forzar tamaño de ventana después de crear el driver
+    driver.maximize_window()
+    driver.set_window_size(1920, 1080)
+    driver.set_window_position(0, 0)
+
+    return driver
 def descargar_captcha(driver):
     captcha_element = WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.ID, "divCaptcha"))
@@ -164,44 +172,238 @@ def crear_estructura_carpetas(base_archivos: str, anio: str, mes: str, RFC: str)
 
     return str(ruta_mes)
 
-# Descargar XML RecibidosA
+def scroll_and_wait(driver, scroll_method='smooth'):
+    """
+    Función mejorada para hacer scroll y esperar a que se cargue el contenido
+    """
+    logger.info(f"Iniciando scroll con método: {scroll_method}")
+
+    try:
+        # Primero, obtener la altura inicial
+        initial_height = driver.execute_script("return document.body.scrollHeight")
+        logger.info(f"Altura inicial de la página: {initial_height}px")
+
+        if scroll_method == 'smooth':
+            # Scroll suave en incrementos
+            for i in range(0, initial_height, 500):
+                driver.execute_script(f"window.scrollTo(0, {i});")
+                time.sleep(0.3)
+
+        elif scroll_method == 'end':
+            # Scroll directo al final
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(2)
+
+        elif scroll_method == 'keys':
+            # Usar teclas para hacer scroll
+            body = driver.find_element(By.TAG_NAME, 'body')
+            for _ in range(10):
+                body.send_keys(Keys.PAGE_DOWN)
+                time.sleep(0.5)
+
+        # Esperar a que se cargue más contenido
+        time.sleep(3)
+
+        # Verificar si la altura cambió (indica que se cargó más contenido)
+        new_height = driver.execute_script("return document.body.scrollHeight")
+        logger.info(f"Nueva altura después del scroll: {new_height}px")
+
+        if new_height > initial_height:
+            logger.info("Se detectó contenido adicional cargado")
+        else:
+            logger.info("No se detectó contenido adicional")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error durante el scroll: {e}")
+        return False
+
+def esperar_elemento_clickeable(driver, locator, timeout=10):
+    """
+    Espera a que un elemento sea clickeable y maneja elementos que lo puedan obstruir
+    """
+    try:
+        # Primero intenta esperar a que sea clickeable
+        element = WebDriverWait(driver, timeout).until(
+            EC.element_to_be_clickable(locator)
+        )
+        return element
+    except:
+        # Si no es clickeable, intenta encontrar el elemento y hacer scroll hacia él
+        try:
+            element = WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located(locator)
+            )
+            # Hacer scroll hacia el elemento
+            driver.execute_script("arguments[0].scrollIntoView(true);", element)
+            time.sleep(1)
+
+            # Intentar hacer click con JavaScript si el click normal falla
+            try:
+                element.click()
+                return element
+            except:
+                driver.execute_script("arguments[0].click();", element)
+                return element
+        except:
+            return None
+
 def descarga(driver, carpeta_destino, mes, year):
     time.sleep(2)
+
     # Navegar a la sección de Recibidos
-    boton_recibidos = WebDriverWait(driver, 50).until(
+    boton_recibidos = WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.XPATH, "/html/body/form/main/div[1]/div[2]/div[1]/div/div[1]/div/nav/ul/div[2]/li/a")))
     boton_recibidos.click()
+
     # Seleccionar rango de fechas
     driver.find_element(By.ID, "ctl00_MainContent_RdoFechas").click()
+    time.sleep(3)
     # Seleccionar mes
     select_mes = Select(driver.find_element(By.ID, "ctl00_MainContent_CldFecha_DdlMes"))
     select_mes.select_by_value(mes)
-    # Seleccionar año
-    select_anio = (Select(driver.find_element(By.XPATH, "//*[@id='DdlAnio']")) or
-                   driver.find_elements(By.NAME, "ctl00$MainContent$CldFecha$DdlAnio"))
-    select_anio.select_by_value(str(year))
+    time.sleep(2)
+
+    # Seleccionar año (corregido)
+    logger.info(f"Seleccionando año: {year}")
+    full_year = "20" + year
+
+    time.sleep(2)
+    # Intentar encontrar el elemento del año con diferentes ID y XPATH
+    try:
+        select_anio = Select(driver.find_element(By.ID, "ctl00_MainContent_CldFecha_DdlAnio"))
+    except:
+        try:
+            select_anio = Select(driver.find_element(By.ID, "DdlAnio"))
+        except:
+            select_anio = Select(driver.find_element(By.XPATH, "//select[contains(@id, 'DdlAnio')]"))
+
+    select_anio.select_by_value(full_year)
+    logger.info(f"Año seleccionado: {full_year}")
+    time.sleep(2)
+
     # Ingresar RFC
     driver.find_element(By.XPATH, "//*[@id='ctl00_MainContent_TxtRfcReceptor']").send_keys(BuscarRFC)
     Select(driver.find_element(By.ID, "ctl00_MainContent_DdlEstadoComprobante")).select_by_value("1")
     driver.find_element(By.ID, "ctl00_MainContent_BtnBusqueda").click()
-    time.sleep(1)
-    # Se va hasta abajo de la página para cargar todas las facturas
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(.5)
+    time.sleep(2)
+
+
+    # Seleccionar estado de comprobante 'vigente' (mejorado)
+    logger.info("Seleccionando estado de comprobante...")
+    estado_elemento = esperar_elemento_clickeable(
+        driver,
+        (By.ID, "ctl00_MainContent_DdlEstadoComprobante"),
+        timeout=15
+    )
+
+    if estado_elemento:
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block: 'bottom'});", estado_elemento)
+            time.sleep(1)
+            estado_select = Select(estado_elemento)
+            estado_select.select_by_value("1")
+            logger.info("Estado de comprobante seleccionado: vigente")
+        except Exception as e:
+            logger.error(f"Error al seleccionar estado: {e}")
+            # Intentar con JavaScript
+            driver.execute_script("""
+                var select = document.getElementById('ctl00_MainContent_DdlEstadoComprobante');
+                select.value = '1';
+                select.dispatchEvent(new Event('change'));
+            """)
+            logger.info("Estado seleccionado usando JavaScript")
+    else:
+        logger.error("No se pudo encontrar el elemento de estado")
+        return
+
+    time.sleep(2)
+
+    # *** HACER CLIC EN EL BOTÓN "BUSCAR CFDI" ***
+    logger.info("Buscando botón 'Buscar CFDI'...")
+
+    # Múltiples métodos para encontrar y hacer clic en el botón
+    boton_buscar_encontrado = False
+
+    # Método 1: Por ID
+    try:
+        boton_buscar = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.ID, "ctl00_MainContent_BtnBusqueda")))
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", boton_buscar)
+        time.sleep(0.5)
+        boton_buscar.click()
+        logger.info("Botón 'Buscar CFDI' encontrado y clickeado por ID")
+        boton_buscar_encontrado = True
+    except Exception as e:
+        logger.warning(f"No se pudo hacer clic por ID: {e}")
+
+    # Método 2: Por XPath si el anterior falló
+    if not boton_buscar_encontrado:
+        try:
+            boton_buscar = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//*[@id='ctl00_MainContent_BtnBusqueda']")))
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", boton_buscar)
+            time.sleep(0.5)
+            boton_buscar.click()
+            logger.info("Botón 'Buscar CFDI' encontrado y clickeado por XPath")
+            boton_buscar_encontrado = True
+        except Exception as e:
+            logger.warning(f"No se pudo hacer clic por XPath: {e}")
+
+    # Método 3: Por valor del botón si los anteriores fallaron
+    if not boton_buscar_encontrado:
+        try:
+            boton_buscar = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//input[@value='Buscar CFDI']")))
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", boton_buscar)
+            time.sleep(0.5)
+            boton_buscar.click()
+            logger.info("Botón 'Buscar CFDI' encontrado y clickeado por valor")
+            boton_buscar_encontrado = True
+        except Exception as e:
+            logger.warning(f"No se pudo hacer clic por valor: {e}")
+
+    # Método 4: JavaScript como último recurso
+    if not boton_buscar_encontrado:
+        try:
+            boton_buscar = driver.find_element(By.ID, "ctl00_MainContent_BtnBusqueda")
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", boton_buscar)
+            time.sleep(0.5)
+            driver.execute_script("document.getElementById('ctl00_MainContent_BtnBusqueda').click();")
+            logger.info("Botón 'Buscar CFDI' clickeado usando JavaScript")
+            boton_buscar_encontrado = True
+        except Exception as e:
+            logger.error(f"Error al hacer clic con JavaScript: {e}")
+
+    if not boton_buscar_encontrado:
+        logger.error("No se pudo encontrar o hacer clic en el botón 'Buscar CFDI'")
+        return
+
+    # Esperar a que se carguen los resultados
+    logger.info("Esperando a que se carguen los resultados...")
+    time.sleep(3)
+
+    # Hacer scroll para cargar todas las facturas (mejorado)
+    logger.info("Haciendo scroll para cargar todas las facturas...")
+
     botones_descarga = driver.find_elements(By.ID, "BtnDescarga") or driver.find_elements(By.XPATH, "//*[@id='BtnDescarga']")
     for index, boton in enumerate(botones_descarga, start=1):
         time.sleep(1)
         try:
-            time.sleep(1)
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", boton)
+            time.sleep(0.5)
             boton.click()
             logger.info(f"Descargando XML {index} de {len(botones_descarga)}")
             esperar_descarga_completa(carpeta_destino)
             if index % 15 == 0:
                 time.sleep(1)  # Espera antes de cambiar de página
                 try:
-                    driver.find_element(By.XPATH, "/html/body/form/main/div[1]/div[2]"
-                                                  "/div[1]/div[2]/div[1]/div[3]/ul/li[36]/a").click()
-
+                    next_page = driver.find_element(By.XPATH, "/html/body/form/main/div[1]/div[2]"
+                                                      "/div[1]/div[2]/div[1]/div[3]/ul/li[36]/a")
+                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_page)
+                    time.sleep(0.5)
+                    next_page.click()
                     logger.info("Página cambiada a .")
                     time.sleep(3)
                 except Exception as e:
@@ -211,9 +413,10 @@ def descarga(driver, carpeta_destino, mes, year):
         finally:
             continue
 
-    time.sleep(.5)
+    logger.info("Configuración completada. Los resultados deberían estar cargados.")
+    time.sleep(2)
     borrar_basura(carpeta_destino)
-    driver.quit()
+
 
 def esperar_descarga_completa(carpeta_destino, tiempo_espera=30):
     tiempo_inicio = time.time()
