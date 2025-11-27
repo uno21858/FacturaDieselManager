@@ -6,6 +6,14 @@ FacturaDieselManager es una aplicación diseñada para descargar facturas del SA
 
 ---
 
+## Interfaz de la Aplicación
+
+![Interfaz Principal](screenshots/app_interface.png)
+
+*Vista principal mostrando el árbol de facturas organizadas por RFC/año/mes, resumen de combustibles y registro de actividad.*
+
+---
+
 ## Características
 - Descarga facturas automáticamente desde el SAT.
 - No requiere archivos FIEL o clave privada.
