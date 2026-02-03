@@ -57,6 +57,7 @@ def configurar_navegador(ruta_descarga):
     options.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/xml")  # Evitar confirmación de descarga
     options.set_preference("pdfjs.disabled", True)  # Evitar visor de PDF integrado
 
+
     # detecta el OS
     import platform
     if platform.system() == "Windows":
