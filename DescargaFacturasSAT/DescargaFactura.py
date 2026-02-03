@@ -42,7 +42,6 @@ def cargar_credenciales():
             password_content = password_file.read().strip()
         return rfc_content, password_content
     except FileNotFoundError:
-        MainCreateCredentials()
         logger.error("Uno o ambos archivos de credenciales no se encontraron.")
         raise
     except Exception as e:
@@ -51,23 +50,29 @@ def cargar_credenciales():
 
 def configurar_navegador(ruta_descarga):
     options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--window-size=1920x1080")
+    #options.add_argument("--headless")
+    options.add_argument("--window-size=1920x1920")
     options.set_preference("browser.download.folderList", 2)
     options.set_preference("browser.download.dir", ruta_descarga)
     options.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/xml")  # Evitar confirmación de descarga
     options.set_preference("pdfjs.disabled", True)  # Evitar visor de PDF integrado
 
-    service = Service(executable_path=os.path.join(BASE_DIR,"geckodriver.exe"))
-    driver = webdriver.Firefox(service=service, options=options)
+    # detecta el OS
+    import platform
+    if platform.system() == "Windows":
+        service = Service(executable_path=os.path.join(BASE_DIR,"geckodriver.exe"))
+        driver = webdriver.Firefox(service=service, options=options)
+    else:  # Mac/Linux
+        driver = webdriver.Firefox(options=options)  # Usa geckodriver del PATH
     return driver
 
 def descargar_captcha(driver):
-    captcha_element = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.ID, "divCaptcha"))
+    # Esperar no solo presencia, sino visibilidad
+    captcha_element = WebDriverWait(driver, 20).until(
+        EC.visibility_of_element_located((By.ID, "divCaptcha"))
     )
     captcha_screenshot = captcha_element.screenshot_as_png
-    time.sleep(2)
+    time.sleep(1)
     captcha_image = Image.open(BytesIO(captcha_screenshot))
     captcha_image.save(CAPTCHA_FILE)
     logger.info(f"Captcha guardado en {CAPTCHA_FILE}")
@@ -87,7 +92,7 @@ def resolver_captcha_en_demo(driver, captcha_image):
         EC.presence_of_element_located((By.CSS_SELECTOR, 'span.demo-output-result[data-js-result]'))
     ).text
     if len(captcha_result) == 0:
-        time.sleep(15)
+        time.sleep(10)
         try:
             captcha_result = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'span.demo-output-result[data-js-result]')) or
@@ -164,56 +169,260 @@ def crear_estructura_carpetas(base_archivos: str, anio: str, mes: str, RFC: str)
 
     return str(ruta_mes)
 
-# Descargar XML RecibidosA
-def descarga(driver, carpeta_destino, mes, year):
-    time.sleep(2)
+# Descargar XML Recibidos
+def descarga(driver, carpeta_destino, year, mes=1):
+    time.sleep(1)
     # Navegar a la sección de Recibidos
     boton_recibidos = WebDriverWait(driver, 50).until(
         EC.presence_of_element_located((By.XPATH, "/html/body/form/main/div[1]/div[2]/div[1]/div/div[1]/div/nav/ul/div[2]/li/a")))
     boton_recibidos.click()
+    time.sleep(2)
+    logger.info("✓ Navegado a Recibidos")
+
     # Seleccionar rango de fechas
-    driver.find_element(By.ID, "ctl00_MainContent_RdoFechas").click()
-    # Seleccionar mes
+    logger.info("Seleccionando rango de fechas...")
+    try:
+        radio_fechas = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.ID, "ctl00_MainContent_RdoFechas")))
+        radio_fechas.click()
+        logger.info("✓ Rango de fechas seleccionado")
+    except Exception as e:
+        logger.warning(f"Error al hacer click en radio de fechas, intentando con JavaScript: {e}")
+        driver.execute_script("document.getElementById('ctl00_MainContent_RdoFechas').click();")
+        logger.info("✓ Rango de fechas seleccionado (JavaScript)")
+    time.sleep(1)
+
+    # Seleccionar mes y año
+    logger.info(f"Seleccionando mes: {mes} y año: {year}")
     select_mes = Select(driver.find_element(By.ID, "ctl00_MainContent_CldFecha_DdlMes"))
-    select_mes.select_by_value(mes)
-    # Seleccionar año
+    select_mes.select_by_value(str(mes))
     select_anio = (Select(driver.find_element(By.XPATH, "//*[@id='DdlAnio']")) or
                    driver.find_elements(By.NAME, "ctl00$MainContent$CldFecha$DdlAnio"))
     select_anio.select_by_value(str(year))
+
     # Ingresar RFC
-    driver.find_element(By.XPATH, "//*[@id='ctl00_MainContent_TxtRfcReceptor']").send_keys(BuscarRFC)
-    Select(driver.find_element(By.ID, "ctl00_MainContent_DdlEstadoComprobante")).select_by_value("1")
-    driver.find_element(By.ID, "ctl00_MainContent_BtnBusqueda").click()
+    logger.info(f"Ingresando RFC: {BuscarRFC}")
+    rfc_input = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.ID, "ctl00_MainContent_TxtRfcReceptor")))
+    rfc_input.clear()
+    rfc_input.send_keys(BuscarRFC)
     time.sleep(1)
-    # Se va hasta abajo de la página para cargar todas las facturas
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(.5)
-    botones_descarga = driver.find_elements(By.ID, "BtnDescarga") or driver.find_elements(By.XPATH, "//*[@id='BtnDescarga']")
-    for index, boton in enumerate(botones_descarga, start=1):
+
+    # Seleccionar estado de comprobante 'vigente'
+    logger.info("Seleccionando estado de comprobante...")
+    estado_elemento = esperar_elemento_clickeable(
+        driver,
+        (By.ID, "ctl00_MainContent_DdlEstadoComprobante"),
+        timeout=15
+    )
+
+    if estado_elemento:
+        try:
+            estado_select = Select(estado_elemento)
+            estado_select.select_by_value("1")
+            logger.info("Estado de comprobante seleccionado: vigente")
+        except Exception as e:
+            logger.error(f"Error al seleccionar estado: {e}")
+            # Intentar con JavaScript
+            driver.execute_script("""
+                var select = document.getElementById('ctl00_MainContent_DdlEstadoComprobante');
+                select.value = '1';
+                select.dispatchEvent(new Event('change'));
+            """)
+            logger.info("Estado seleccionado usando JavaScript")
+    else:
+        logger.error("No se pudo encontrar el elemento de estado")
+        return
+
+    time.sleep(.3)
+
+    # Hacer clic en el botón "Buscar CFDI" con JavaScript
+    logger.info("Ejecutando búsqueda de CFDIs...")
+    try:
+        boton_buscar = driver.find_element(By.ID, "ctl00_MainContent_BtnBusqueda")
+        driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", boton_buscar)
+        time.sleep(1)
+        # Ejecutar directamente el código JavaScript del onclick del botón
+        driver.execute_script("""
+            ocultaResultados();
+            WebForm_DoPostBackWithOptions(new WebForm_PostBackOptions("ctl00$MainContent$BtnBusqueda", "", true, "Fechas", "", false, false));
+        """)
+        logger.info("✓ Búsqueda ejecutada")
+    except Exception as e:
+        logger.error(f"Error al ejecutar búsqueda con JavaScript: {e}")
+        # Último intento: click directo
+        try:
+            boton_buscar = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.ID, "ctl00_MainContent_BtnBusqueda")))
+            boton_buscar.click()
+            logger.info("✓ Búsqueda ejecutada (click directo)")
+        except Exception as e2:
+            logger.error(f"No se pudo hacer clic en el botón: {e2}")
+            return
+
+    # Esperar a que se carguen los resultados
+    logger.info("Esperando a que se carguen los resultados...")
+    try:
+        tabla_resultados = WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.ID, "ctl00_MainContent_tblResult")))
+        logger.info("✓ Tabla de resultados encontrada")
+        time.sleep(3)
+    except Exception as e:
+        logger.error(f"No se encontró la tabla de resultados: {e}")
+        return
+
+    # Buscar todos los botones de descarga usando el selector mejorado
+    logger.info("Buscando botones de descarga...")
+    botones_descarga = driver.find_elements(By.XPATH, "//span[@name='BtnDescarga']")
+    try:
+        # Encontrar el botón primero
+        boton_buscar = driver.find_element(By.ID, "ctl00_MainContent_BtnBusqueda")
+
+        # Hacer scroll solo hasta el botón (no hasta el final)
+        driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", boton_buscar)
+        time.sleep(3)
+
+        # Ejecutar directamente el código JavaScript del onclick del botón
+        logger.info("Ejecutando click en botón 'Buscar CFDI'...")
+        driver.execute_script("""
+                ocultaResultados();
+                WebForm_DoPostBackWithOptions(new WebForm_PostBackOptions("ctl00$MainContent$BtnBusqueda", "", true, "Fechas", "", false, false));
+            """)*2
+        logger.info("Botón 'Buscar CFDI' ejecutado con JavaScript")
+
+    except Exception as e:
+        logger.error(f"Error al ejecutar búsqueda: {e}")
+        # Último intento: click directo
+        try:
+            boton_buscar = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.ID, "ctl00_MainContent_BtnBusqueda")))
+            boton_buscar.click()
+            logger.info("Botón 'Buscar CFDI' clickeado directamente")
+        except Exception as e2:
+            logger.error(f"No se pudo hacer clic en el botón: {e2}")
+            return
+
+    # Esperar a que se carguen los resultados
+    logger.info("Esperando a que se carguen los resultados...")
+
+    # Esperar a que aparezca la tabla de resultados
+    try:
+        tabla_resultados = WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.ID, "ctl00_MainContent_tblResult")))
+        logger.info("Tabla de resultados encontrada")
+        time.sleep(3)
+    except Exception as e:
+        logger.error(f"No se encontró la tabla de resultados: {e}")
+        return
+
+    # Buscar todos los botones de descarga XML
+    logger.info("Buscando botones de descarga XML...")
+    botones_xml = driver.find_elements(By.XPATH, "//span[@name='BtnDescarga']")
+
+    logger.info(f"Total de botones XML encontrados: {len(botones_xml)}")
+
+    if len(botones_xml) == 0:
+        logger.warning("No se encontraron facturas para descargar")
+        return
+
+    for index in range(len(botones_xml)):
         time.sleep(1)
         try:
-            time.sleep(1)
-            boton.click()
-            logger.info(f"Descargando XML {index} de {len(botones_descarga)}")
-            esperar_descarga_completa(carpeta_destino)
-            if index % 15 == 0:
-                time.sleep(1)  # Espera antes de cambiar de página
-                try:
-                    driver.find_element(By.XPATH, "/html/body/form/main/div[1]/div[2]"
-                                                  "/div[1]/div[2]/div[1]/div[3]/ul/li[36]/a").click()
+            botones_xml = driver.find_elements(By.XPATH, "//span[@name='BtnDescarga']")
 
-                    logger.info("Página cambiada a .")
-                    time.sleep(3)
+            # Descargar XML
+            if index < len(botones_xml):
+                time.sleep(0.5)
+                try:
+                    # Intentar scroll y click normal
+                    try:
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", botones_xml[index])
+                        time.sleep(0.3)
+                        botones_xml[index].click()
+                    except:
+                        # Si falla, usar JavaScript click directamente
+                        driver.execute_script("arguments[0].click();", botones_xml[index])
+
+                    logger.info(f"Descargando XML {index + 1} de {len(botones_xml)}")
+                    esperar_descarga_completa(carpeta_destino)
+                except Exception as e:
+                    logger.error(f"Error al descargar XML {index + 1}: {e}")
+
+            # Cambiar de página cada 15 facturas
+            if (index + 1) % 15 == 0:
+                time.sleep(1)
+                try:
+                    boton_siguiente = None
+
+                    # Método 1: Por texto "»"
+                    try:
+                        boton_siguiente = driver.find_element(By.XPATH, "//ul[contains(@class, 'pagination')]//a[text()='»']")
+                    except:
+                        pass
+
+                    # Método 2: Por posición relativa
+                    if not boton_siguiente:
+                        try:
+                            boton_siguiente = driver.find_element(By.XPATH, "//ul[contains(@class, 'pagination')]//li[last()]/a")
+                        except:
+                            pass
+
+                    # Método 3: XPath original
+                    if not boton_siguiente:
+                        try:
+                            boton_siguiente = driver.find_element(By.XPATH, "/html/body/form/main/div/div[2]/div[1]/div[2]/div[1]/div[3]/ul/li[6]/a")
+                        except:
+                            pass
+
+                    if boton_siguiente:
+                        boton_siguiente.click()
+                        logger.info("Página cambiada.")
+                        time.sleep(3)
+                    else:
+                        logger.warning("No se encontró botón de siguiente página, continuando...")
+
                 except Exception as e:
                     logger.error(f"Error al cambiar de página: {e}")
+
         except Exception as e:
-            logger.error(f"Error al descargar XML {index}: {e}")
-        finally:
+            logger.error(f"Error al procesar factura {index + 1}: {e}")
             continue
 
-    time.sleep(.5)
+
+
+    logger.info("Configuración completada. Los resultados deberían estar cargados.")
+    time.sleep(2)
     borrar_basura(carpeta_destino)
-    driver.quit()
+
+def esperar_elemento_clickeable(driver, locator, timeout=10):
+    """
+    Espera a que un elemento sea clickeable y maneja elementos que lo puedan obstruir
+    """
+    try:
+        # Primero intenta esperar a que sea clickeable
+        element = WebDriverWait(driver, timeout).until(
+            EC.element_to_be_clickable(locator)
+        )
+        return element
+    except:
+        # Si no es clickeable, intenta encontrar el elemento y hacer scroll hacia él
+        try:
+            element = WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located(locator)
+            )
+            # Hacer scroll hacia el elemento
+            driver.execute_script("arguments[0].scrollIntoView(true);", element)
+            time.sleep(1)
+
+            try:
+                element.click()
+                return element
+            except:
+                driver.execute_script("arguments[0].click();", element)
+                return element
+        except:
+            return None
+
 
 def esperar_descarga_completa(carpeta_destino, tiempo_espera=30):
     tiempo_inicio = time.time()
@@ -292,27 +501,24 @@ def cambiar_nombre(ruta_mes):
         finally:
             continue
 
-def MainDescarga(MainWindow):
-    mes = str(MainWindow.mes_numerico_seleccionado)
-    year = str(MainWindow.anio_seleccionado)
+
+def MainDescarga(mes, anio, worker_thread=None):
+    mes = str(mes)
+    year = str(anio)
+
     try:
         rfc, password = cargar_credenciales()
     except FileNotFoundError:
         logger.error("Uno o ambos archivos de credenciales no se encontraron.")
-        qtw.QMessageBox.warning(
-            MainWindow,
-            "Credenciales faltantes",
-            "No se encontraron las credenciales. Por favor, introdúzcalas para continuar."
-        )
-
-        # Abre la ventana de creación de credenciales y espera que el usuario las cree
-        ventana_credenciales = CredencialesForm(callback=lambda: None)
-        ventana_credenciales.exec()
+        if worker_thread:
+            worker_thread.credentials_needed.emit()
         return
     except Exception as e:
         logger.error(f"Error al cargar las credenciales: {e}")
-        qtw.QMessageBox.critical(MainWindow, "Error", "Ocurrió un error al cargar las credenciales.")
+        if worker_thread:
+            worker_thread.error.emit("Error", "Ocurrió un error al cargar las credenciales.")
         return
+
     try:
         carpeta_destino = crear_estructura_carpetas(base_archivos, year, mes, BuscarRFC)
         driver = configurar_navegador(carpeta_destino)
@@ -320,10 +526,15 @@ def MainDescarga(MainWindow):
         max_intentos = 4
         driver.get(SAT_URL)
 
-        while intentos < max_intentos:
+        # Esperar carga completa de JavaScript
+        WebDriverWait(driver, 20).until(
+            lambda d: d.execute_script('return document.readyState') == 'complete'
+        )
+        time.sleep(3)
 
+        while intentos < max_intentos:
             try:
-                time.sleep(1)
+                time.sleep(2)
                 captcha_path = descargar_captcha(driver)
                 captcha_text = resolver_captcha_en_demo(driver, captcha_path)
                 iniciar_sesion_en_sat(driver, rfc, password, captcha_text)
@@ -332,8 +543,15 @@ def MainDescarga(MainWindow):
                     intentos += 1
                     logger.info(f"Reintentando... ({intentos}/{max_intentos})")
                     driver.get(SAT_URL)
+                    # Re-esperar carga completa
+                    WebDriverWait(driver, 20).until(
+                        lambda d: d.execute_script('return document.readyState') == 'complete'
+                    )
+                    time.sleep(3)
                 else:
-                    descarga(driver, carpeta_destino, mes, year)
+                    descarga(driver, carpeta_destino, year, int(mes))
+                    if worker_thread:
+                        worker_thread.info.emit("Éxito", "Facturas descargadas correctamente")
                     break
             except Exception as e:
                 logger.error(f"Error durante el intento: {e}")
@@ -341,14 +559,16 @@ def MainDescarga(MainWindow):
 
         if intentos == max_intentos:
             logger.error("Se alcanzó el límite máximo de intentos.")
-            qtw.QMessageBox.critical(MainWindow, "Error", "No fue posible completar la descarga después de varios intentos."
-                                                          "\nPor favor, inténtelo de nuevo más tarde. Ya que el SAT es una Basura.")
+            if worker_thread:
+                worker_thread.error.emit(
+                    "Error",
+                    "No fue posible completar la descarga después de varios intentos.\nPor favor, inténtelo de nuevo más tarde. Ya que el SAT es una Basura."
+                )
     except Exception as e:
         logger.error(f"Error inesperado en el flujo de descarga: {e}")
-        qtw.QMessageBox.critical(MainWindow, "Error", "Ocurrió un error inesperado durante la descarga."
-                                                      f"\nError: {e}")
+        if worker_thread:
+            worker_thread.error.emit("Error", f"Ocurrió un error inesperado durante la descarga.\nError: {e}")
     finally:
         if 'driver' in locals():
             driver.quit()
         logger.info("Descarga finalizada.")
-

@@ -11,8 +11,9 @@ from PySide6.QtCore import QFileSystemWatcher, QModelIndex
 
 from utils import base_archivos
 from Principal.UI.principal_window import Ui_MainWindow
-from DescargaFacturasSAT.DescargaFactura import MainDescarga
 from logger_config import logger
+
+from worker_thread import DownloadWorker
 
 class QTextEditHandler(logging.Handler):
     def __init__(self, text_edit):
@@ -29,6 +30,8 @@ class MainWindow(qtw.QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
 
+        self.download_worker = None
+
         self.setup_logger()
 
         # Conectar señales
@@ -38,7 +41,7 @@ class MainWindow(qtw.QMainWindow):
 
         self.ui.treeView.setAlternatingRowColors(True)
         self.file_system_model = QFileSystemModel()
-        base_xml = base_archivos + r"\xml_descargado"
+        base_xml = os.path.join(base_archivos, "xml_descargado")
         self.file_system_model.setRootPath(base_xml)
         self.ui.treeView.setHeaderHidden(True)
         self.file_system_model.index(base_xml)
@@ -90,8 +93,35 @@ class MainWindow(qtw.QMainWindow):
             logger.info(f"Año seleccionado: {self.anio_seleccionado}")
 
     def descargafacturas(self):
-        logger.info(f"Descargando facturas para el mes {str(self.mes_numerico_seleccionado)} del año {str(self.anio_seleccionado)}")
-        MainDescarga(self)
+        if hasattr(self, 'download_worker') and self.download_worker is not None:
+            if self.download_worker.isRunning():
+                logger.warning("Ya hay una descarga en progreso")
+                return
+
+        # Validar que se haya seleccionado un mes y año válidos
+        if not hasattr(self, 'mes_numerico_seleccionado') or self.mes_numerico_seleccionado is None:
+            self.mes_numerico_seleccionado = 1  # Valor por defecto
+
+        if not hasattr(self, 'anio_seleccionado') or self.anio_seleccionado is None:
+            logger.error("No se ha seleccionado un año válido")
+            return
+
+        logger.info(
+            f"Descargando facturas para el mes {str(self.mes_numerico_seleccionado)} del año {str(self.anio_seleccionado)}")
+
+        self.ui.btn_download.setEnabled(False)
+
+        # Pasar solo los datos, NO la ventana completa
+        self.download_worker = DownloadWorker(
+            self.mes_numerico_seleccionado,
+            self.anio_seleccionado
+        )
+        self.download_worker.finished.connect(self.on_download_finished)
+        self.download_worker.error.connect(self.on_download_error)
+        self.download_worker.warning.connect(self.on_download_warning)
+        self.download_worker.info.connect(self.on_download_info)
+        self.download_worker.credentials_needed.connect(self.on_credentials_needed)
+        self.download_worker.start()
 
     def on_treeview_click(self, index: QModelIndex):
         file_path = self.file_system_model.filePath(index)
@@ -113,7 +143,7 @@ class MainWindow(qtw.QMainWindow):
     # Actualizar constantemente el tree
     def inicializar_supervisor(self):
         self.watcher = QFileSystemWatcher()
-        base_xml = base_archivos + r"\xml_descargado"
+        base_xml = os.path.join(base_archivos, "xml_descargado")
         if os.path.exists(base_xml):
             self.watcher.addPath(base_xml)
             self.watcher.directoryChanged.connect(self.actualizar_treeview)
@@ -122,13 +152,41 @@ class MainWindow(qtw.QMainWindow):
             logger.error(f"La carpeta '{base_xml}' no existe. No se pudo inicializar el supervisor.")
 
     def actualizar_treeview(self):
-        base_xml = base_archivos + r"\xml_descargado"
+        base_xml = os.path.join(base_archivos, "xml_descargado")
         if os.path.exists(base_xml):
             self.file_system_model.setRootPath(base_xml)
             self.ui.treeView.setRootIndex(self.file_system_model.index(base_xml))
             logger.info("Árbol de facturas actualizado.")
         else:
             logger.warning("La carpeta de facturas no existe.")
+
+    def on_download_finished(self):
+        self.ui.btn_download.setEnabled(True)
+        logger.info("Descarga completada")
+
+
+    def on_download_error(self, title, message):
+        self.ui.btn_download.setEnabled(True)
+        logger.error(f"Error en descarga: {message}")
+        qtw.QMessageBox.critical(self, title, message)
+
+    def on_download_warning(self, title, message):
+        qtw.QMessageBox.warning(self, title, message)
+
+    def on_download_info(self, title, message):
+        qtw.QMessageBox.information(self, title, message)
+
+    def on_credentials_needed(self):
+        self.ui.btn_download.setEnabled(True)
+        qtw.QMessageBox.warning(
+            self,
+            "Credenciales faltantes",
+            "No se encontraron las credenciales. Por favor, introdúzcalas para continuar.",
+            qtw.QMessageBox.Ok
+        )
+        from Credenciales.credencial import UiForm as CredencialesForm
+        ventana_credenciales = CredencialesForm(callback=lambda: None)
+        ventana_credenciales.exec()
 
 # Funciones externas para suma de diesel y gasolina
 def traducir_mes(fecha):
