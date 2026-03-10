@@ -21,6 +21,7 @@ trio==0.31.0
 trio-websocket==0.12.2
 typing-extensions==4.15.0
 urllib3==2.5.0
+zstandard>=0.18.0
 websocket-client==1.8.0
 wsproto==1.2.0
 pyinstaller==6.11.1
