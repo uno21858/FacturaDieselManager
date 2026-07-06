@@ -47,8 +47,10 @@ def cargar_credenciales():
 
 def configurar_navegador(ruta_descarga):
     options = Options()
-    #options.add_argument("--headless")
-    options.add_argument("--window-size=1920x1920")
+    options.add_argument("--headless")
+    # Firefox usa --width/--height (--window-size es de Chrome y lo ignora)
+    options.add_argument("--width=1920")
+    options.add_argument("--height=1920")
     options.set_preference("browser.download.folderList", 2)
     options.set_preference("browser.download.dir", ruta_descarga)
     options.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/xml")  # Evitar confirmación de descarga
