@@ -82,6 +82,8 @@ jobs:
     needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write  # necesario para crear el Release
 
     steps:
     - name: Download Windows build

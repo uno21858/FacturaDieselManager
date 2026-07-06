@@ -379,7 +379,7 @@ def esperar_elemento_clickeable(driver, locator, timeout=10):
             return None
 
 
-def esperar_descarga_completa(carpeta_destino, tiempo_espera=30):
+def esperar_descarga_completa(carpeta_destino, tiempo_espera=60):
     tiempo_inicio = time.time()
     while time.time() - tiempo_inicio < tiempo_espera:
         archivos_temporales = glob.glob(os.path.join(carpeta_destino, "*.part"))
@@ -434,6 +434,11 @@ def borrar_basura(ruta_mes):
             logger.error(f"Error al procesar {ruta_archivo}: {e}")
 
     logger.info(f"Total facturas eliminadas: {facturas_eliminadas}")
+
+    # Al final: descargas que nunca terminaron dejan .part huérfanos
+    for part in glob.glob(os.path.join(ruta_mes, "*.part")):
+        os.remove(part)
+        logger.info(f"Descarga incompleta eliminada: {os.path.basename(part)}")
 
 def cambiar_nombre(ruta_mes):
     for archivo in os.listdir(ruta_mes):
