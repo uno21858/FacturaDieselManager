@@ -1,0 +1,105 @@
+name: Build FacturaDieselManager
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Permite ejecutar manualmente
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Build with PyInstaller
+      run: |
+        pyinstaller FacturaDieselManager.spec --clean
+
+    - name: Create ZIP for distribution
+      run: |
+        cd dist
+        Compress-Archive -Path FacturaDieselManager -DestinationPath FacturaDieselManager-Windows.zip
+
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: FacturaDieselManager-Windows
+        path: dist/FacturaDieselManager-Windows.zip
+        retention-days: 30
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        brew install geckodriver
+
+    - name: Build with PyInstaller
+      run: |
+        pyinstaller FacturaDieselManager.spec --clean
+
+    - name: Create ZIP for distribution
+      run: |
+        cd dist
+        zip -r FacturaDieselManager-macOS.zip FacturaDieselManager.app
+
+    - name: Upload macOS artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: FacturaDieselManager-macOS
+        path: dist/FacturaDieselManager-macOS.zip
+        retention-days: 30
+
+  # Crear release si es un tag
+  create-release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+    - name: Download Windows build
+      uses: actions/download-artifact@v4
+      with:
+        name: FacturaDieselManager-Windows
+
+    - name: Download macOS build
+      uses: actions/download-artifact@v4
+      with:
+        name: FacturaDieselManager-macOS
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          FacturaDieselManager-Windows.zip
+          FacturaDieselManager-macOS.zip
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
