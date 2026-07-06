@@ -6,6 +6,17 @@ base_archivos = os.path.dirname(os.path.abspath(__file__))
 RFC_FILE = os.path.join(BASE_DIR, "RFC.txt")
 PASSWORD_FILE = os.path.join(BASE_DIR, "passwd.txt")
 
+# Los CFDI nuevos usan namespace 4.0 y los viejos 3.x
+CFDI_NAMESPACES = ('http://www.sat.gob.mx/cfd/4', 'http://www.sat.gob.mx/cfd/3')
+
+def conceptos_cfdi(root):
+    """Regresa los cfdi:Concepto de un XML, sea CFDI 4.0 o 3.x."""
+    for ns in CFDI_NAMESPACES:
+        conceptos = root.findall(f'.//{{{ns}}}Concepto')
+        if conceptos:
+            return conceptos
+    return []
+
 def crear_archivos_credenciales(rfc=None, password=None):
     if not os.path.exists(RFC_FILE):
         if not rfc:

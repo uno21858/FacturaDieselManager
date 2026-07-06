@@ -7,28 +7,46 @@ import logging
 
 from PySide6 import QtWidgets as qtw
 from PySide6.QtWidgets import QFileSystemModel, QMessageBox
-from PySide6.QtCore import QFileSystemWatcher, QModelIndex
+from PySide6.QtCore import QModelIndex, QObject, Signal
 
-from utils import base_archivos
+from utils import base_archivos, conceptos_cfdi
 from Principal.UI.principal_window import Ui_MainWindow
 from logger_config import logger
 
 from worker_thread import DownloadWorker
 
-class QTextEditHandler(logging.Handler):
+class QTextEditHandler(logging.Handler, QObject):
+    # Señal para cruzar del hilo de descarga al hilo de la UI (tocar widgets desde otro hilo truena)
+    _nuevo_log = Signal(str)
+
     def __init__(self, text_edit):
-        super().__init__()
+        logging.Handler.__init__(self)
+        QObject.__init__(self)
         self.text_edit = text_edit
+        # Tope de líneas: al llegar al límite, Qt descarta las más viejas solo
+        text_edit.document().setMaximumBlockCount(500)
+        self._nuevo_log.connect(self._agregar_linea)
 
     def emit(self, record):
-        msg = self.format(record)
+        # La UI muestra solo la primera línea, corta; el detalle completo queda en application.log
+        msg = record.getMessage().splitlines()[0]
+        if len(msg) > 160:
+            msg = msg[:160] + "…"
+        self._nuevo_log.emit(msg)
+
+    def _agregar_linea(self, msg):
         self.text_edit.append(msg)
+        barra = self.text_edit.verticalScrollBar()
+        barra.setValue(barra.maximum())
+
+APP_VERSION = "1.2.0"
 
 class MainWindow(qtw.QMainWindow):
     def __init__(self):
         super().__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        self.setWindowTitle(f"Factura Diesel Manager v{APP_VERSION}")
 
         self.download_worker = None
 
@@ -39,21 +57,17 @@ class MainWindow(qtw.QMainWindow):
         self.ui.cB_months.currentTextChanged.connect(self.preguntar_mes)
         self.ui.Dte_year.dateChanged.connect(self.preguntar_anio)
 
+        # QFileSystemModel se auto-actualiza cuando cambia el contenido de las carpetas
         self.ui.treeView.setAlternatingRowColors(True)
         self.file_system_model = QFileSystemModel()
         base_xml = os.path.join(base_archivos, "xml_descargado")
         self.file_system_model.setRootPath(base_xml)
-        self.ui.treeView.setHeaderHidden(True)
-        self.file_system_model.index(base_xml)
         self.ui.treeView.setModel(self.file_system_model)
         self.ui.treeView.setRootIndex(self.file_system_model.index(base_xml))
-
-        self.ui.treeView.setColumnHidden(1, True)
-        self.ui.treeView.setColumnHidden(2, True)
-        self.ui.treeView.setColumnHidden(3, True)
+        for col in (1, 2, 3):
+            self.ui.treeView.setColumnHidden(col, True)
         self.ui.treeView.setHeaderHidden(True)
         self.ui.treeView.clicked.connect(self.on_treeview_click)
-        self.inicializar_supervisor()
 
 
     def setup_logger(self):
@@ -93,17 +107,14 @@ class MainWindow(qtw.QMainWindow):
             logger.info(f"Año seleccionado: {self.anio_seleccionado}")
 
     def descargafacturas(self):
-        if hasattr(self, 'download_worker') and self.download_worker is not None:
-            if self.download_worker.isRunning():
-                logger.warning("Ya hay una descarga en progreso")
-                return
+        if self.download_worker is not None and self.download_worker.isRunning():
+            logger.warning("Ya hay una descarga en progreso")
+            return
 
-        # Validar que se haya seleccionado un mes y año válidos
-        if not hasattr(self, 'mes_numerico_seleccionado') or self.mes_numerico_seleccionado is None:
-            self.mes_numerico_seleccionado = 1  # Valor por defecto
-
-        if not hasattr(self, 'anio_seleccionado') or self.anio_seleccionado is None:
-            logger.error("No se ha seleccionado un año válido")
+        # Leer la selección actual del combo aquí, sin depender de que las señales hayan corrido
+        self.preguntar_mes()
+        if self.mes_numerico_seleccionado is None or self.anio_seleccionado is None:
+            logger.error("Mes o año seleccionado inválido")
             return
 
         logger.info(
@@ -126,39 +137,21 @@ class MainWindow(qtw.QMainWindow):
     def on_treeview_click(self, index: QModelIndex):
         file_path = self.file_system_model.filePath(index)
 
-        if os.path.isfile(file_path) and file_path.endswith('.xml'):
-            logger.info(f"Procesando archivo seleccionado:")
-
-            fecha, folio = sacar_datos(file_path)
-            diesel_liters, diesel_price, gasoline_price = extract_fuel_data(file_path)
-
-            # Actualizar etiquetas
-            self.ui.lb_fechaEmision.setText(fecha)
-            self.ui.lb_LitersDiesel.setText(f"{diesel_liters:,.2f}")
-            self.ui.lb_PriceDiesel.setText(f"${diesel_price:,.2f}")
-            self.ui.lb_FolioFactura.setText(f"D{folio}")
-            self.ui.lb_PriceGas.setText(f"${gasoline_price:,.2f}")
-        else:
+        if not os.path.isfile(file_path):
+            return  # carpetas: solo navegación, sin popup
+        if not file_path.endswith('.xml'):
             QMessageBox.warning(self, "Archivo no válido", "Por favor selecciona un archivo XML válido.")
-    # Actualizar constantemente el tree
-    def inicializar_supervisor(self):
-        self.watcher = QFileSystemWatcher()
-        base_xml = os.path.join(base_archivos, "xml_descargado")
-        if os.path.exists(base_xml):
-            self.watcher.addPath(base_xml)
-            self.watcher.directoryChanged.connect(self.actualizar_treeview)
-            logger.info(f"Supervisando la carpeta: {base_xml}")
-        else:
-            logger.error(f"La carpeta '{base_xml}' no existe. No se pudo inicializar el supervisor.")
+            return
 
-    def actualizar_treeview(self):
-        base_xml = os.path.join(base_archivos, "xml_descargado")
-        if os.path.exists(base_xml):
-            self.file_system_model.setRootPath(base_xml)
-            self.ui.treeView.setRootIndex(self.file_system_model.index(base_xml))
-            logger.info("Árbol de facturas actualizado.")
-        else:
-            logger.warning("La carpeta de facturas no existe.")
+        fecha, folio = sacar_datos(file_path)
+        diesel_liters, diesel_price, gasoline_price = extract_fuel_data(file_path)
+
+        # Actualizar etiquetas
+        self.ui.lb_fechaEmision.setText(fecha)
+        self.ui.lb_LitersDiesel.setText(f"{diesel_liters:,.2f}")
+        self.ui.lb_PriceDiesel.setText(f"${diesel_price:,.2f}")
+        self.ui.lb_FolioFactura.setText(f"D{folio}")
+        self.ui.lb_PriceGas.setText(f"${gasoline_price:,.2f}")
 
     def on_download_finished(self):
         self.ui.btn_download.setEnabled(True)
@@ -228,12 +221,11 @@ def extract_fuel_data(file_path):
         tree = ET.parse(file_path)
         root = tree.getroot()
 
-        namespaces = {'cfdi': 'http://www.sat.gob.mx/cfd/4'}
         total_diesel_liters = 0
         total_diesel_price = 0
         total_gasoline_price = 0
 
-        for concept in root.findall('.//cfdi:Concepto', namespaces):
+        for concept in conceptos_cfdi(root):
             description = concept.attrib.get('Descripcion', '').lower()
             liters = float(concept.attrib.get('Cantidad', 0))
             price = float(concept.attrib.get('Importe', 0))
@@ -252,14 +244,5 @@ def extract_fuel_data(file_path):
 def log_uncaught_exceptions(exctype, value, tb):
     logger.critical("Excepción no manejada", exc_info=(exctype, value, tb))
     sys.__excepthook__(exctype, value, tb)
-
-
-def ventana_principal():
-    sys.excepthook = log_uncaught_exceptions
-
-    app = qtw.QApplication(sys.argv)
-    main_window = MainWindow()
-    main_window.show()
-    sys.exit(app.exec())
 
 

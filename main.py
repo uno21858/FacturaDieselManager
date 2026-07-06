@@ -1,9 +1,10 @@
 import sys
 from PySide6 import QtWidgets as qtw
 from logger_config import logger
-from Principal.Principal_Window import MainWindow
+from Principal.Principal_Window import MainWindow, log_uncaught_exceptions
 
 def main():
+    sys.excepthook = log_uncaught_exceptions
     app = qtw.QApplication(sys.argv)
 
     logger.info("Iniciando la aplicacion principal.")
